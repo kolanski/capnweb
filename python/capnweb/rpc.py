@@ -45,10 +45,48 @@ class RpcSessionOptions:
     def __init__(self, 
                  debug: bool = False,
                  max_message_size: int = 1024 * 1024,  # 1MB
-                 call_timeout: float = 30.0):
+                 call_timeout: float = 30.0,
+                 connect_timeout: float = 10.0,
+                 reconnect_enabled: bool = False,
+                 reconnect_max_attempts: int = 5,
+                 reconnect_delay: float = 1.0,
+                 reconnect_backoff_factor: float = 2.0,
+                 reconnect_max_delay: float = 60.0,
+                 on_send_error: Optional[Callable[[Exception], Optional[Exception]]] = None,
+                 on_connect: Optional[Callable[[], Awaitable[None]]] = None,
+                 on_disconnect: Optional[Callable[[Exception], Awaitable[None]]] = None,
+                 auth_handler: Optional[Callable[[], Awaitable[Dict[str, Any]]]] = None):
+        """
+        Initialize RPC session options.
+        
+        Args:
+            debug: Enable debug logging
+            max_message_size: Maximum message size in bytes
+            call_timeout: Timeout for individual RPC calls
+            connect_timeout: Timeout for initial connection
+            reconnect_enabled: Enable automatic reconnection on disconnection
+            reconnect_max_attempts: Maximum number of reconnection attempts
+            reconnect_delay: Initial delay between reconnection attempts
+            reconnect_backoff_factor: Exponential backoff factor for reconnection delays
+            reconnect_max_delay: Maximum delay between reconnection attempts
+            on_send_error: Callback for error serialization/redaction
+            on_connect: Callback called when connection is established
+            on_disconnect: Callback called when connection is lost
+            auth_handler: Callback to provide authentication data
+        """
         self.debug = debug
         self.max_message_size = max_message_size
         self.call_timeout = call_timeout
+        self.connect_timeout = connect_timeout
+        self.reconnect_enabled = reconnect_enabled
+        self.reconnect_max_attempts = reconnect_max_attempts
+        self.reconnect_delay = reconnect_delay
+        self.reconnect_backoff_factor = reconnect_backoff_factor
+        self.reconnect_max_delay = reconnect_max_delay
+        self.on_send_error = on_send_error
+        self.on_connect = on_connect
+        self.on_disconnect = on_disconnect
+        self.auth_handler = auth_handler
 
 
 class ExportTableEntry:
@@ -153,6 +191,7 @@ class RpcSessionImpl(Exporter, Importer):
                  options: RpcSessionOptions = None):
         self._transport = transport
         self._options = options or RpcSessionOptions()
+        self._original_transport_factory: Optional[Callable[[], Awaitable[RpcTransport]]] = None
         
         # Export/import tables
         self._exports: List[Optional[ExportTableEntry]] = []
@@ -162,6 +201,11 @@ class RpcSessionImpl(Exporter, Importer):
         self._next_call_id = 1
         self._pending_calls: Dict[int, asyncio.Future] = {}
         self._closed = False
+        self._connected = False
+        self._reconnect_attempts = 0
+        
+        # Store local main for reconnection
+        self._local_main = local_main
         
         # Export the main object at index 0
         if local_main is not None:
@@ -176,6 +220,10 @@ class RpcSessionImpl(Exporter, Importer):
         
         # Start message handling
         self._read_task = asyncio.create_task(self._read_loop())
+    
+    def set_transport_factory(self, factory: Callable[[], Awaitable[RpcTransport]]) -> None:
+        """Set a factory function for creating new transports (used for reconnection)."""
+        self._original_transport_factory = factory
     
     def get_remote_main(self) -> RpcStub:
         """Get a stub for the remote main object."""
@@ -300,29 +348,84 @@ class RpcSessionImpl(Exporter, Importer):
                 asyncio.create_task(self._transport.send(json.dumps(message)))
     
     async def _read_loop(self) -> None:
-        """Main message reading loop."""
-        try:
-            while not self._closed:
-                try:
-                    message_str = await self._transport.receive()
-                    message = json.loads(message_str)
-                    await self._handle_message(message)
+        """Main message reading loop with reconnection support."""
+        while not self._closed:
+            try:
+                # Mark as connected if we're starting fresh
+                if not self._connected:
+                    self._connected = True
+                    self._reconnect_attempts = 0
+                    if self._options.on_connect:
+                        try:
+                            await self._options.on_connect()
+                        except Exception as e:
+                            logger.warning(f"Error in on_connect callback: {e}")
                 
-                except json.JSONDecodeError as e:
-                    logger.error(f"Failed to decode message: {e}")
-                except Exception as e:
-                    if not self._closed:
-                        logger.error(f"Error handling message: {e}")
-                    # Break on any transport error to stop the loop
-                    break
+                # Message reading loop
+                while not self._closed:
+                    try:
+                        message_str = await self._transport.receive()
+                        message = json.loads(message_str)
+                        await self._handle_message(message)
                     
-        except Exception as e:
-            if not self._closed:
-                logger.error(f"Read loop error: {e}")
-        finally:
-            # Close session on exit
-            if not self._closed:
-                await self.close()
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Failed to decode message: {e}")
+                    except Exception as e:
+                        if not self._closed:
+                            logger.error(f"Error handling message: {e}")
+                        # Break on any transport error to potentially reconnect
+                        raise
+                        
+            except Exception as e:
+                self._connected = False
+                
+                # Call disconnect callback
+                if self._options.on_disconnect:
+                    try:
+                        await self._options.on_disconnect(e)
+                    except Exception as callback_error:
+                        logger.warning(f"Error in on_disconnect callback: {callback_error}")
+                
+                if self._closed:
+                    break
+                
+                # Try to reconnect if enabled
+                if (self._options.reconnect_enabled and 
+                    self._original_transport_factory and
+                    self._reconnect_attempts < self._options.reconnect_max_attempts):
+                    
+                    self._reconnect_attempts += 1
+                    delay = min(
+                        self._options.reconnect_delay * (self._options.reconnect_backoff_factor ** (self._reconnect_attempts - 1)),
+                        self._options.reconnect_max_delay
+                    )
+                    
+                    logger.info(f"Attempting reconnection {self._reconnect_attempts}/{self._options.reconnect_max_attempts} in {delay:.1f}s")
+                    await asyncio.sleep(delay)
+                    
+                    try:
+                        # Close old transport
+                        await self._transport.close()
+                        
+                        # Create new transport
+                        self._transport = await self._original_transport_factory()
+                        logger.info(f"Reconnection {self._reconnect_attempts} successful")
+                        continue  # Continue with new transport
+                        
+                    except Exception as reconnect_error:
+                        logger.error(f"Reconnection {self._reconnect_attempts} failed: {reconnect_error}")
+                        if self._reconnect_attempts >= self._options.reconnect_max_attempts:
+                            logger.error("Maximum reconnection attempts reached")
+                            break
+                        continue  # Try again
+                else:
+                    if not self._closed:
+                        logger.error(f"Read loop error (no reconnection): {e}")
+                    break
+        
+        # Close session on exit
+        if not self._closed:
+            await self.close()
     
     async def _handle_message(self, message: Dict[str, Any]) -> None:
         """Handle an incoming message."""
@@ -388,13 +491,23 @@ class RpcSessionImpl(Exporter, Importer):
             await self._transport.send(json.dumps(response))
         
         except Exception as e:
+            # Process error through callback if provided
+            processed_error = e
+            if self._options.on_send_error and isinstance(e, Exception):
+                try:
+                    callback_result = self._options.on_send_error(e)
+                    if callback_result is not None:
+                        processed_error = callback_result
+                except Exception as callback_error:
+                    logger.warning(f"Error in on_send_error callback: {callback_error}")
+            
             # Send error response
             error_response = {
                 "type": "error",
                 "callId": call_id,
                 "error": {
-                    "name": type(e).__name__,
-                    "message": str(e)
+                    "name": type(processed_error).__name__,
+                    "message": str(processed_error)
                 }
             }
             

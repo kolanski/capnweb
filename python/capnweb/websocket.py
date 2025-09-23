@@ -94,9 +94,38 @@ async def new_websocket_rpc_session(
     if websockets is None:
         raise ImportError("websockets package is required for WebSocket transport")
     
-    websocket = await websockets.connect(uri)
-    transport = WebSocketTransport(websocket)
+    options = options or RpcSessionOptions()
+    
+    async def create_transport():
+        # Get authentication headers if auth handler is provided
+        extra_headers = {}
+        if options.auth_handler:
+            try:
+                auth_data = await options.auth_handler()
+                if isinstance(auth_data, dict):
+                    extra_headers.update(auth_data)
+            except Exception as e:
+                logger.error(f"Authentication failed: {e}")
+                raise
+        
+        # Connect with timeout
+        try:
+            websocket = await asyncio.wait_for(
+                websockets.connect(uri, extra_headers=extra_headers),
+                timeout=options.connect_timeout
+            )
+        except asyncio.TimeoutError:
+            raise asyncio.TimeoutError(f"Connection timeout after {options.connect_timeout}s")
+        
+        return WebSocketTransport(websocket)
+    
+    # Create initial transport
+    transport = await create_transport()
     session = RpcSession(transport, local_main, options)
+    
+    # Set up reconnection if enabled
+    if options.reconnect_enabled:
+        session._impl.set_transport_factory(create_transport)
     
     return session.get_remote_main()
 

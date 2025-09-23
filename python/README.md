@@ -58,7 +58,119 @@ if __name__ == "__main__":
 - **Context managers**: Automatic resource cleanup
 - **Async/await**: Native Python async support
 
-## Advanced Example
+## Advanced Features
+
+### Reconnection and Error Handling
+
+```python
+import asyncio
+from capnweb import new_websocket_rpc_session, RpcSessionOptions
+
+async def auth_handler():
+    """Provide authentication headers for WebSocket connection."""
+    return {"Authorization": "Bearer your-token-here"}
+
+async def on_connect():
+    """Called when connection is established."""
+    print("Connected to server!")
+
+async def on_disconnect(error):
+    """Called when connection is lost."""
+    print(f"Disconnected: {error}")
+
+def error_handler(error):
+    """Process outgoing errors (server-side)."""
+    # Redact sensitive information
+    if "password" in str(error).lower():
+        return Exception("Sensitive information redacted")
+    return error
+
+# Configure enhanced session options
+options = RpcSessionOptions(
+    # Connection settings
+    connect_timeout=10.0,
+    call_timeout=5.0,
+    
+    # Reconnection settings
+    reconnect_enabled=True,
+    reconnect_max_attempts=5,
+    reconnect_delay=1.0,
+    reconnect_backoff_factor=2.0,
+    reconnect_max_delay=60.0,
+    
+    # Callbacks
+    auth_handler=auth_handler,
+    on_connect=on_connect,
+    on_disconnect=on_disconnect,
+    on_send_error=error_handler,
+    
+    # Debugging
+    debug=True
+)
+
+async def main():
+    # Client with enhanced features
+    api = await new_websocket_rpc_session("ws://localhost:8080/api", options=options)
+    
+    try:
+        result = await api.hello("World")
+        print(result)
+    except Exception as e:
+        print(f"Error: {e}")
+
+asyncio.run(main())
+```
+
+### Authentication
+
+The Python implementation supports custom authentication through headers:
+
+```python
+async def auth_handler():
+    """Return authentication headers for WebSocket connection."""
+    return {
+        "Authorization": "Bearer your-jwt-token",
+        "X-API-Key": "your-api-key",
+        "X-Client-Version": "1.0.0"
+    }
+
+options = RpcSessionOptions(auth_handler=auth_handler)
+api = await new_websocket_rpc_session("wss://secure-api.com/rpc", options=options)
+```
+
+### Timeouts
+
+Configure different timeout values for various operations:
+
+```python
+options = RpcSessionOptions(
+    connect_timeout=10.0,  # Timeout for initial connection
+    call_timeout=30.0      # Timeout for individual RPC calls
+)
+```
+
+### Error Handling and Redaction
+
+Implement custom error processing for security:
+
+```python
+def sanitize_errors(error):
+    """Remove sensitive information from errors before sending to client."""
+    error_msg = str(error)
+    
+    # Redact sensitive patterns
+    if any(word in error_msg.lower() for word in ['password', 'token', 'secret']):
+        return Exception("Internal server error")
+    
+    # Log detailed error server-side while returning generic message
+    if "database" in error_msg.lower():
+        logger.error(f"Database error: {error}")
+        return Exception("Service temporarily unavailable")
+    
+    return error  # Return original error if no sensitive data
+
+options = RpcSessionOptions(on_send_error=sanitize_errors)
+```
 
 ```python
 import asyncio
@@ -180,12 +292,18 @@ See the `examples/` directory for:
 - `demo_core.py` - Core functionality demonstration
 - `readme_demo.py` - README-style usage examples  
 - `example_basic.py` - Complete client/server example
+- `example_enhanced.py` - Advanced features (reconnection, auth, error handling)
 
 ## Implementation Status
 
 - ✅ Core RPC classes (RpcTarget, RpcStub, RpcSession)
 - ✅ Serialization/deserialization system
-- ✅ WebSocket transport
+- ✅ WebSocket transport with reconnection support
+- ✅ Authentication via custom headers
+- ✅ Timeout configuration (connect and call timeouts)
+- ✅ Error handling and redaction callbacks
+- ✅ Connection lifecycle callbacks (on_connect, on_disconnect)
+- ✅ Automatic reconnection with exponential backoff
 - ✅ Basic tests and examples
 - 🚧 HTTP batch transport (planned)
 - 🚧 Advanced pipelining features (in progress)
