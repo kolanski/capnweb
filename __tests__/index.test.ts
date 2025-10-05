@@ -571,7 +571,7 @@ describe("basic rpc", () => {
     // object's version of that property. We really want to generate messages sent to the other
     // end to access the remote version, but there's no legitimate way to do this via the JS-level
     // API. Fortunately, our transport implements a hack: the string "$remove$" will be excised
-    // from any message. So, we can use this as a prefix on property names to create a prpoperty
+    // from any message. So, we can use this as a prefix on property names to create a property
     // that does not match anything locally, but by the time it reaches the remote end, will name
     // a common object property.
 
@@ -1073,7 +1073,7 @@ describe("stub disposal over RPC", () => {
       [Symbol.dispose]() { targetDisposed = true; }
     }
 
-    // Intentionally dont use `using` here because we expect the stats to be wrong after a
+    // Intentionally don't use `using` here because we expect the stats to be wrong after a
     // disconnect.
     let harness = new TestHarness(new DisposableTarget());
     let stub = harness.stub;
@@ -1096,7 +1096,7 @@ describe("stub disposal over RPC", () => {
   });
 
   it("shuts down the connection if the main capability is disposed", async () => {
-    // Intentionally dont use `using` here because we expect the stats to be wrong after a
+    // Intentionally don't use `using` here because we expect the stats to be wrong after a
     // disconnect.
     let harness = new TestHarness(new TestTarget());
     let stub = harness.stub;
@@ -1250,7 +1250,7 @@ describe("onRpcBroken", () => {
       throwError(): Promise<Counter> { throw new Error("test error"); }
     }
 
-    // Intentionally dont use `using` here because we expect the stats to be wrong after a
+    // Intentionally don't use `using` here because we expect the stats to be wrong after a
     // disconnect.
     let harness = new TestHarness(new TestBroken());
     let stub = harness.stub;
