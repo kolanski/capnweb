@@ -60,6 +60,60 @@ if __name__ == "__main__":
 
 ## Advanced Features
 
+### HTTP Batch Transport and Pipelining
+
+The HTTP batch transport allows multiple RPC calls to be sent in a single HTTP request, dramatically reducing latency for dependent calls:
+
+```python
+import asyncio
+from capnweb import new_http_batch_rpc_session
+
+async def main():
+    # Create a batch session
+    api = await new_http_batch_rpc_session("http://localhost:3000/rpc")
+    
+    # These calls are pipelined - they all go in ONE HTTP request
+    user = api.authenticate("session-token")
+    profile = api.get_user_profile(user.id)  # Uses result from authenticate
+    notifications = api.get_notifications(user.id)  # Also uses result from authenticate
+    
+    # All results come back together in a single round trip
+    u, p, n = await asyncio.gather(user, profile, notifications)
+    print(f"User: {u}")
+    print(f"Profile: {p}")
+    print(f"Notifications: {n}")
+
+asyncio.run(main())
+```
+
+Server-side batch handling:
+
+```python
+from aiohttp import web
+from capnweb import RpcTarget, new_http_batch_rpc_response
+
+class Api(RpcTarget):
+    async def authenticate(self, session_token: str) -> dict:
+        # Validate token and return user info
+        return {"id": "u_1", "name": "Alice"}
+    
+    async def get_user_profile(self, user_id: str) -> dict:
+        return {"id": user_id, "bio": "Developer"}
+    
+    async def get_notifications(self, user_id: str) -> list:
+        return ["Welcome!", "You have 3 new messages"]
+
+async def handle_rpc(request):
+    """Handle batch RPC requests."""
+    body = await request.text()
+    response_body = await new_http_batch_rpc_response(body, Api())
+    return web.Response(text=response_body)
+
+app = web.Application()
+app.router.add_post('/rpc', handle_rpc)
+web.run_app(app, port=3000)
+```
+
 ### Reconnection and Error Handling
 
 ```python
@@ -299,13 +353,12 @@ See the `examples/` directory for:
 - ✅ Core RPC classes (RpcTarget, RpcStub, RpcSession)
 - ✅ Serialization/deserialization system
 - ✅ WebSocket transport with reconnection support
+- ✅ HTTP batch transport with pipelining
 - ✅ Authentication via custom headers
 - ✅ Timeout configuration (connect and call timeouts)
 - ✅ Error handling and redaction callbacks
 - ✅ Connection lifecycle callbacks (on_connect, on_disconnect)
 - ✅ Automatic reconnection with exponential backoff
 - ✅ Basic tests and examples
-- 🚧 HTTP batch transport (planned)
-- 🚧 Advanced pipelining features (in progress)
 
 This implementation provides the same powerful object-capability RPC features as the JavaScript version, adapted for Python's async ecosystem.
