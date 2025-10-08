@@ -1,0 +1,72 @@
+{
+  "batch_50": {
+    "rps": 615994.1254222352,
+    "total_time": 0.01623392105102539,
+    "batch_size": 50,
+    "total_calls": 10000,
+    "batches_processed": 200
+  },
+  "batch_100": {
+    "rps": 1141555.7128082304,
+    "total_time": 0.00875997543334961,
+    "batch_size": 100,
+    "total_calls": 10000,
+    "batches_processed": 100
+  },
+  "batch_200": {
+    "rps": 2093383.9089638651,
+    "total_time": 0.004776954650878906,
+    "batch_size": 200,
+    "total_calls": 10000,
+    "batches_processed": 50
+  },
+  "batch_500": {
+    "rps": 4138843.497138346,
+    "total_time": 0.0024161338806152344,
+    "batch_size": 500,
+    "total_calls": 10000,
+    "batches_processed": 20
+  },
+  "batch_1000": {
+    "rps": 6226698.337292162,
+    "total_time": 0.001605987548828125,
+    "batch_size": 1000,
+    "total_calls": 10000,
+    "batches_processed": 10
+  },
+  "parallel_10_200": {
+    "rps": 4330453.456677955,
+    "total_time": 0.011546134948730469,
+    "pool_size": 10,
+    "batch_size": 200,
+    "total_calls": 50000,
+    "successful_calls": 50000,
+    "parallel_instances": 10
+  },
+  "parallel_20_200": {
+    "rps": 4642746.925537685,
+    "total_time": 0.021538972854614258,
+    "pool_size": 20,
+    "batch_size": 200,
+    "total_calls": 100000,
+    "successful_calls": 100000,
+    "parallel_instances": 20
+  },
+  "compute": {
+    "rps": 871732.0730090243,
+    "total_time": 0.057357072830200195,
+    "total_calls": 50000,
+    "operations_per_second": 871732.0730090243
+  },
+  "extreme": {
+    "rps": 3915453.2504121475,
+    "target_rps": 100000,
+    "actual_calls": 500000,
+    "target_calls": 500000,
+    "actual_time": 0.1276991367340088,
+    "target_time": 5.0,
+    "achievement_rate": 3915.4532504121476,
+    "batch_size": 500,
+    "pool_size": 200
+  }
+}

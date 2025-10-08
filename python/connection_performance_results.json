@@ -1,0 +1,54 @@
+{
+  "single_connection": {
+    "rps": 824.1257610428581,
+    "total_time": 1.213407039642334,
+    "avg_latency_ms": 1.2126519680023193,
+    "p95_latency_ms": 1.3188958168029785,
+    "p99_latency_ms": 1.73292875289917,
+    "min_latency_ms": 1.0552406311035156,
+    "max_latency_ms": 3.484010696411133
+  },
+  "pool_small": {
+    "rps": 3792.057688621758,
+    "total_time": 0.26370906829833984,
+    "avg_latency_ms": 1.2049686908721924,
+    "p95_latency_ms": 1.3020038604736328,
+    "p99_latency_ms": 2.339205741882324,
+    "min_latency_ms": 1.069784164428711,
+    "max_latency_ms": 3.2541751861572266
+  },
+  "pool_medium": {
+    "rps": 7241.740757910476,
+    "total_time": 0.27617669105529785,
+    "avg_latency_ms": 1.2184425592422485,
+    "p95_latency_ms": 1.2187600135803223,
+    "p99_latency_ms": 4.45751428604126,
+    "min_latency_ms": 1.0330677032470703,
+    "max_latency_ms": 10.004997253417969
+  },
+  "pool_large": {
+    "rps": 15501.408724854538,
+    "total_time": 0.19353079795837402,
+    "avg_latency_ms": 1.1743895212809246,
+    "p95_latency_ms": 1.2042522430419922,
+    "p99_latency_ms": 1.2547564506530762,
+    "min_latency_ms": 1.0387897491455078,
+    "max_latency_ms": 5.499839782714844
+  },
+  "concurrent_clients": {
+    "rps": 8267.872261367254,
+    "total_time": 0.24190020561218262,
+    "num_clients": 10,
+    "calls_per_client": 200,
+    "total_calls": 2000,
+    "avg_latency_ms": 1.198974609375,
+    "p95_latency_ms": 1.2950778007507324
+  },
+  "circuit_breaker": {
+    "rps": 834.0443606262555,
+    "total_time": 1.198976993560791,
+    "successful_calls": 1000,
+    "failed_calls": 0,
+    "success_rate": 100.0
+  }
+}
