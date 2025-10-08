@@ -62,29 +62,32 @@ if __name__ == "__main__":
 
 ### HTTP Batch Transport and Pipelining
 
-The HTTP batch transport allows multiple RPC calls to be sent in a single HTTP request, dramatically reducing latency for dependent calls:
+The HTTP batch transport allows multiple RPC calls to be sent in a single HTTP request, reducing latency:
 
 ```python
 import asyncio
 from capnweb import new_http_batch_rpc_session
 
 async def main():
-    # Create a batch session
-    api = await new_http_batch_rpc_session("http://localhost:3000/rpc")
+    # Create a batch session for the first call
+    api1 = await new_http_batch_rpc_session("http://localhost:3000/rpc")
+    user = await api1.authenticate("session-token")
     
-    # These calls are pipelined - they all go in ONE HTTP request
-    user = api.authenticate("session-token")
-    profile = api.get_user_profile(user.id)  # Uses result from authenticate
-    notifications = api.get_notifications(user.id)  # Also uses result from authenticate
+    # Create a new batch session for multiple dependent calls
+    # These will all go in ONE HTTP request
+    api2 = await new_http_batch_rpc_session("http://localhost:3000/rpc")
+    profile = api2.get_user_profile(user['id'])
+    notifications = api2.get_notifications(user['id'])
     
-    # All results come back together in a single round trip
-    u, p, n = await asyncio.gather(user, profile, notifications)
-    print(f"User: {u}")
+    # Both results come back together in a single round trip
+    p, n = await asyncio.gather(profile, notifications)
     print(f"Profile: {p}")
     print(f"Notifications: {n}")
 
 asyncio.run(main())
 ```
+
+**Note:** Each batch session handles one HTTP request-response cycle. For multiple batches, create a new session for each batch. Full promise pipelining (passing promise results as arguments before they resolve) is planned for a future release.
 
 Server-side batch handling:
 

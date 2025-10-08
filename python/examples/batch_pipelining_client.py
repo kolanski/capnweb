@@ -68,21 +68,25 @@ def patch_aiohttp():
 
 
 async def run_pipelined():
-    """Run pipelined batch requests (all in one HTTP POST)."""
+    """Run batch requests (multiple calls in one HTTP POST)."""
     global fetch_count
     fetch_count = 0
     
     t0 = time.time()
     
-    api = await new_http_batch_rpc_session(RPC_URL)
+    # Create a batch session for one round trip
+    api1 = await new_http_batch_rpc_session(RPC_URL)
+    user = api1.authenticate('cookie-123')
+    u = await user
     
-    # These calls are pipelined - they all go in ONE HTTP request
-    user = api.authenticate('cookie-123')
-    profile = api.get_user_profile(user.id)
-    notifications = api.get_notifications(user.id)
+    # Create another batch session for the next round trip
+    # This demonstrates batching two dependent calls together
+    api2 = await new_http_batch_rpc_session(RPC_URL)
+    profile = api2.get_user_profile(u['id'])
+    notifications = api2.get_notifications(u['id'])
     
-    # Wait for all results
-    u, p, n = await asyncio.gather(user, profile, notifications)
+    # These two calls are batched together in a single HTTP request
+    p, n = await asyncio.gather(profile, notifications)
     
     t1 = time.time()
     return {
@@ -127,7 +131,7 @@ async def main():
     
     print(f'Simulated network RTT (each direction): ~{SIMULATED_RTT_MS}ms ±{SIMULATED_RTT_JITTER_MS}ms')
     
-    print('\n--- Running pipelined (batched, single round trip) ---')
+    print('\n--- Running batch (multiple calls batched together) ---')
     pipelined = await run_pipelined()
     print(f'HTTP POSTs: {pipelined["posts"]}')
     print(f'Time: {pipelined["ms"]:.2f} ms')
@@ -144,7 +148,7 @@ async def main():
     print(f'Notifications: {sequential["n"]}')
     
     print('\nSummary:')
-    print(f'Pipelined: {pipelined["posts"]} POST, {pipelined["ms"]:.2f} ms')
+    print(f'Batched: {pipelined["posts"]} POSTs, {pipelined["ms"]:.2f} ms')
     print(f'Sequential: {sequential["posts"]} POSTs, {sequential["ms"]:.2f} ms')
 
 
