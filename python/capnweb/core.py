@@ -102,8 +102,14 @@ class RpcPromise:
             return self._resolved_value
         
         if len(self._path.path) == 0:
-            # This is a direct result, not a property access
-            raise RuntimeError("Cannot resolve a promise without a property path")
+            # This is a direct result from a method call (CallResultHook)
+            # We need to resolve it by calling the underlying hook's method
+            if isinstance(self._hook, CallResultHook):
+                self._resolved_value = await self._hook._get_result()
+                self._is_resolved = True
+                return self._resolved_value
+            else:
+                raise RuntimeError("Cannot resolve a promise without a property path")
         
         # Get the property from the remote object
         property_name = self._path.path[-1]
@@ -138,6 +144,19 @@ class CallResultHook(StubHook):
         self._kwargs = kwargs
         self._result: Optional[Any] = None
         self._is_resolved = False
+        # Eagerly start the RPC call to enable pipelining
+        self._result_task = asyncio.create_task(self._execute_call())
+    
+    async def _execute_call(self) -> Any:
+        """Execute the RPC call."""
+        try:
+            result = await self._parent_hook.call(self._method_name, self._args, self._kwargs)
+            self._result = result
+            self._is_resolved = True
+            return result
+        except Exception as e:
+            self._is_resolved = True
+            raise
     
     async def call(self, method_name: str, args: List[Any], kwargs: Dict[str, Any]) -> Any:
         """Call a method on the result of the original call."""
@@ -154,15 +173,22 @@ class CallResultHook(StubHook):
     async def get_property(self, property_name: str) -> Any:
         """Get a property from the result of the original call."""
         result = await self._get_result()
-        return getattr(result, property_name)
+        
+        # Handle both dict access and object attribute access
+        if isinstance(result, dict):
+            return result[property_name]
+        else:
+            return getattr(result, property_name)
     
     async def _get_result(self) -> Any:
         """Get the result of the original method call."""
         if self._is_resolved:
+            if hasattr(self, '_result_task') and self._result_task.done() and self._result_task.exception():
+                raise self._result_task.exception()
             return self._result
         
-        self._result = await self._parent_hook.call(self._method_name, self._args, self._kwargs)
-        self._is_resolved = True
+        # Wait for the RPC call to complete
+        await self._result_task
         return self._result
     
     def dispose(self) -> None:

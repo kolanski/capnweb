@@ -312,7 +312,7 @@ class RpcSessionImpl(Exporter, Importer):
         }
         
         # Create future for the result
-        future = asyncio.create_future()
+        future = asyncio.get_event_loop().create_future()
         self._pending_calls[call_id] = future
         
         try:
@@ -371,7 +371,8 @@ class RpcSessionImpl(Exporter, Importer):
                     except json.JSONDecodeError as e:
                         logger.error(f"Failed to decode message: {e}")
                     except Exception as e:
-                        if not self._closed:
+                        # For batch transport, "Batch RPC request ended" is normal
+                        if not self._closed and str(e) != "Batch RPC request ended.":
                             logger.error(f"Error handling message: {e}")
                         # Break on any transport error to potentially reconnect
                         raise
@@ -419,7 +420,7 @@ class RpcSessionImpl(Exporter, Importer):
                             break
                         continue  # Try again
                 else:
-                    if not self._closed:
+                    if not self._closed and str(e) != "Batch RPC request ended.":
                         logger.error(f"Read loop error (no reconnection): {e}")
                     break
         
